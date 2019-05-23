@@ -54,7 +54,7 @@
 #include "../egs_nd_geometry/egs_nd_geometry.h"
 #include "../egs_planes/egs_planes.h"
 #ifdef HAS_GZSTREAM
-#include "../egs_autoenvelope/gzstream.h"
+#include "gzstream.h"
 #endif
 
 
