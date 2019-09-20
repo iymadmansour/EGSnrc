@@ -51,9 +51,9 @@ geometry_libs = egs_planes egs_cd_geometry egs_gtransformed egs_nd_geometry \
                egs_box egs_genvelope egs_spheres egs_cylinders egs_iplanes \
                egs_cones egs_gstack egs_prism egs_union egs_pyramid egs_conez\
                egs_space egs_elliptic_cylinders egs_smart_envelope \
-               egs_vhp_geometry egs_octree egs_roundrect_cylinders \
+               egs_vhp_geometry egs_octree egs_roundrect_cylinders egs_autoenvelope\
                egs_hexagonal_lattice egs_cubic_lattice egs_ellipsoids \
-               egs_rz egs_autoenvelope egs_glib
+               egs_rz egs_glib
 
 source_libs = egs_collimated_source egs_isotropic_source egs_parallel_beam \
               egs_point_source egs_source_collection egs_transformed_source \
