@@ -606,3 +606,181 @@ public:
 
 
 };
+
+//Iymad edits start here
+/* ********************************************************************************
+ *  fluence spectrum in Voxel */
+
+class FluenceSpectrumInVoxel : public BaseSpectrumScorer {
+
+    EGS_BaseGeometry *geometry;
+    EGS_Float region_volume;
+    int local_scoring_region;
+    int scoring_region;
+    
+
+    void getResult(int bin, EGS_Float &r, EGS_Float &dr);
+
+    string getTitle() const {
+        stringstream ss;
+        ss << "EGS_Brachy: " << getParticleName() << " fluence spectrum in region ";
+        ss << local_scoring_region << " of '"<<geometry->getName()<<"'";
+        return ss.str();
+    }
+
+    string getYAxisLabel() const {
+        return "fluence / cm\\S2";
+    }
+
+    void outputTotal();
+
+    string getFileExtension() const {
+        return fextension != "" ? fextension : "voxelflu";
+    }
+
+public:
+
+
+    FluenceSpectrumInVoxel(EGS_Input *input, EGS_BaseSource *src, GeomInfo *ginfo, Publisher *publisher):
+        BaseSpectrumScorer(input, src, ginfo, publisher) {
+
+        if (particle_type != 0) {
+            egsFatal(
+                "fluence spectra may only be scored for photons. See:\n\t"
+                "https://github.com/nrc-cnrc/EGSnrc/issues/109/\n"
+                "for details."
+            );
+        }
+
+        string gname;
+        int err = input->getInput("geometry",gname);
+        if (err) {
+            egsWarning("FluenceSpectrumInVoxel: missing or invalid `geometry` input\n");
+            valid =  false;
+            return;
+        }
+
+        geometry = EGS_BaseGeometry::getGeometry(gname);
+        if (!geometry) {
+            egsWarning("FluenceSpectrumInVoxel: unable to find geometry named `%s` \n", gname.c_str());
+            valid =  false;
+            return;
+        }
+
+        err = input->getInput("scoring region", local_scoring_region);
+        if (err) {
+            egsWarning("FluenceSpectrumInVoxel: no `scoring region` defined. Assuming region 0\n");
+            local_scoring_region = 0;
+        }
+
+        if (scoring_region < 0 || local_scoring_region > geometry->regions()) {
+            egsWarning("FluenceSpectrumInVoxel: invalid region `scoring region` defined. Assuming region 0\n");
+            local_scoring_region = 0;
+        }
+
+        GeomRegT geomreg(geometry, local_scoring_region);
+        scoring_region = ginfo->localToGlobal(geomreg);
+
+        region_volume = geometry->getMass(local_scoring_region)/geometry->getRelativeRho(local_scoring_region);
+
+        publisher->subscribe(this, PARTICLE_TAKING_STEP);
+
+    };
+
+
+    virtual void score(EB_Message message, void *data=0);
+
+
+};
+
+
+//Keeping all flags and potential errors as fluence scoring in a region.
+class EnergySpectrumInVoxel : public BaseSpectrumScorer {
+
+    EGS_BaseGeometry *geometry;
+    EGS_Float region_volume;
+    int local_scoring_region;
+    int scoring_region;
+
+
+    void getResult(int bin, EGS_Float &r, EGS_Float &dr);
+
+    string getTitle() const {
+        stringstream ss;
+        ss << "EGS_Brachy: " << getParticleName() << " Energy spectrum in region ";
+        ss << local_scoring_region << " of '"<<geometry->getName()<<"'";
+        return ss.str();
+    }
+
+    string getYAxisLabel() const {
+        return "1 / cm\\S2";
+    }
+
+    void outputTotal();
+
+    string getFileExtension() const {
+        return fextension != "" ? fextension : "EnergySpectrum";
+    }
+
+public:
+
+
+    EnergySpectrumInVoxel(EGS_Input *input, EGS_BaseSource *src, GeomInfo *ginfo, Publisher *publisher):
+        BaseSpectrumScorer(input, src, ginfo, publisher) {
+
+        if (particle_type != 0) {
+            egsFatal(
+                "fluence spectra may only be scored for photons. See:\n\t"
+                "https://github.com/nrc-cnrc/EGSnrc/issues/109/\n"
+                "for details."
+            );
+        }
+
+        string gname;
+        int err = input->getInput("geometry",gname);
+        if (err) {
+            egsWarning("EnergySpectrumInVoxel: missing or invalid `geometry` input\n");
+            valid =  false;
+            return;
+        }
+
+        geometry = EGS_BaseGeometry::getGeometry(gname);
+        if (!geometry) {
+            egsWarning("EnergySpectrumInVoxel: unable to find geometry named `%s` \n", gname.c_str());
+            valid =  false;
+            return;
+        }
+
+        err = input->getInput("scoring region", local_scoring_region);
+        if (err) {
+            egsWarning("EnergySpectrumInVoxel: no `scoring region` defined. Assuming region 0\n");
+            local_scoring_region = 0;
+        }
+
+        if (scoring_region < 0 || local_scoring_region > geometry->regions()) {
+            egsWarning("EnergySpectrumInVoxel: invalid region `scoring region` defined. Assuming region 0\n");
+            local_scoring_region = 0;
+        }
+
+        GeomRegT geomreg(geometry, local_scoring_region);
+        scoring_region = ginfo->localToGlobal(geomreg);
+
+        region_volume = geometry->getMass(local_scoring_region)/geometry->getRelativeRho(local_scoring_region);
+
+        publisher->subscribe(this, PARTICLE_TAKING_STEP);
+
+    };
+
+
+    virtual void score(EB_Message message, void *data=0);
+
+
+};
+
+
+
+
+
+
+//Iymad edits end here
+//*********************************************************************************
