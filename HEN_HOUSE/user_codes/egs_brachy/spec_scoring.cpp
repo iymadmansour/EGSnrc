@@ -89,6 +89,8 @@ BaseSpectrumScorer *BaseSpectrumScorer::getSpectrumScorer(EGS_Input *inp, EGS_Ba
     types.push_back("surface count");
     types.push_back("energy weighted surface");
     types.push_back("energy fluence in region");
+    types.push_back("fluence in region");
+    types.push_back("energy spectrum in region");
 
     string type = types[inp->getInput("type", types, 0)];
 
@@ -99,6 +101,10 @@ BaseSpectrumScorer *BaseSpectrumScorer::getSpectrumScorer(EGS_Input *inp, EGS_Ba
         scorer = new EnergyWeightedSurfaceSpectrum(inp, source, ginfo, publisher);
     } else if (type == "energy fluence in region") {
         scorer = new EnergyFluenceSpectrumInVoxel(inp, source, ginfo, publisher);
+    } else if (type == "fluence in region") {
+        scorer = new FluenceSpectrumInVoxel(inp, source, ginfo, publisher);
+    } else if (type == "energy spectrum in region") {
+        scorer = new EnergySpectrumInVoxel(inp, source, ginfo, publisher);
     }
 
     if (!scorer || !scorer->isValid()) {
@@ -238,12 +244,14 @@ string BaseSpectrumScorer::outputCSV(string rootname) {
     ofstream out;
     string fname = getFileName(rootname)+".csv";
     out.open(fname.c_str());
-    out << "E,F,dF\n";
-    double mid, r, dr;
+    out << "Energy (keV-left),Energy (MeV-left),Freq(1/MeV),Absolute unc (k=1)\n";
+    double mid, midkeV, r, dr;
     for (int i=0; i < nbins; i++) {
-        mid = e_min + (i+0.5)*bin_width;
+        //mid = e_min + (i+0.5)*bin_width;
+        mid = e_min + i*bin_width;
+        midkeV = mid*1000;
         getResult(i, r, dr);
-        out << string_format("%.5E,%.5E,%.5E\n", mid, r, dr);
+        out << string_format("%.5E,%.5E, %.5E,%.5E\n", midkeV, mid, r, dr);
     }
 
     out.close();
@@ -433,16 +441,17 @@ int BaseSpectrumScorer::addState(istream &data) {
 
 
 /*********************************************************************************
- * Surface Count Spectrum */
+ * Surface Count Spectrum IYMAD ADDITIONS TO MODIFY SCORING LOCATION */
 
 void SurfaceCountSpectrum::score(EB_Message message, void *data) {
 
     if (message == PARTICLE_ESCAPING_SOURCE) {
         EGS_Particle *p= static_cast<EGS_Particle *>(data);
+        EGS_Vector new_loc(p->x);
 
         double energy = getParticleEnergy(p);
-
-        if (e_min <= energy && energy <= e_max && p->q == particle_type) {
+        //Added threshold to not count particles which are backscattered outside of source
+        if (e_min <= energy && energy <= e_max && p->q == particle_type && new_loc.z < 14.8) {
             bins->score(getBin(energy), 1.);
             total_scored += 1.;
         }
@@ -451,9 +460,13 @@ void SurfaceCountSpectrum::score(EB_Message message, void *data) {
 }
 
 void SurfaceCountSpectrum::getResult(int i, EGS_Float &r, EGS_Float &dr) {
-
+    double eff_history_norm = eff_history / cur_history;
+    //egsInformation("eff_history_norm : %.5G \n", eff_history_norm);
     bins->currentResult(i, r, dr);
-    EGS_Float norm = bin_width * total_scored / cur_history;
+    //If want to remove normalization based on total scored:
+    EGS_Float norm = bin_width * eff_history_norm;
+    //Standard egs_brachy normalizaton
+    //EGS_Float norm = bin_width * total_scored / cur_history;
     r /= norm;
     dr /= norm;
 
@@ -461,7 +474,7 @@ void SurfaceCountSpectrum::getResult(int i, EGS_Float &r, EGS_Float &dr) {
 
 void SurfaceCountSpectrum::outputTotal() {
 
-
+    //egsInformation("Modifications have been made to this routine. Reported units will be 1/MeV/N\n") ;
     egsInformation("Scoring metric    : absolute photon counts on surface of source\n") ;
     egsInformation("Total counts      : %.5G \n", total_scored);
 }
@@ -516,7 +529,7 @@ void EnergyFluenceSpectrumInVoxel::score(EB_Message message, void *data) {
         bool correct_particle =  p->q == particle_type;
 
         if (in_scoring_region && in_energy_scoring_range && correct_particle) {
-            EGS_Float score = the_epcont->tvstep*p->wt;
+            EGS_Float score = the_epcont->tvstep*p->wt*p->E;
             bins->score(getBin(p->E), score);
             total_scored += score;
         }
@@ -543,3 +556,108 @@ void EnergyFluenceSpectrumInVoxel::outputTotal() {
     egsInformation("Total E fluence   : %.5G MeV/cm^2\n", total_scored);
 
 }
+
+
+//Iymad edits start here
+/* ********************************************************************************
+*  fluence spectrum in Voxel */
+
+/* Note: this only works if there are no other geometries overlapping
+ * the scoring region! */
+void FluenceSpectrumInVoxel::score(EB_Message message, void *data) {
+
+    if (message == PARTICLE_TAKING_STEP) {
+        EGS_Particle *p= static_cast<EGS_Particle *>(data);
+        
+        //np is the Number of particles currently on the stack, and referencing of this sort should give particle information on the particle currently being transported.
+        //int np = the_stack->np-1;
+        //int latch = the_stack->latch[np];
+        int latch = p->latch;
+        bool in_scoring_region = p->ir == scoring_region;
+        bool in_energy_scoring_range = (e_min <= p->E) && (p->E <= e_max);
+        bool correct_particle =  p->q == particle_type;
+
+        if (in_scoring_region && in_energy_scoring_range && correct_particle && latch >= 0) {
+             //Looks like this is simply the paricle weight adjusted track length.
+            EGS_Float score = the_epcont->tvstep*p->wt;
+            //egsInformation("Fluence spectrum in voxel \n") ;
+            //egsInformation("Track length   : %.5G \n", the_epcont->tvstep) ;
+            //egsInformation("Score   : %.5G \n", score) ;
+            bins->score(getBin(p->E), score);
+            total_scored += score;
+        }
+    }
+
+}
+
+void FluenceSpectrumInVoxel::getResult(int i, EGS_Float &r, EGS_Float &dr) {
+
+    double eff_history_norm = eff_history / cur_history;
+    bins->currentResult(i, r, dr);
+    //Seems to be the only location in which a consideration of energy actually takes place. i.e bin width
+    EGS_Float norm = bin_width * region_volume * eff_history_norm;
+    r /= norm;
+    dr /= norm;
+
+}
+
+void FluenceSpectrumInVoxel::outputTotal() {
+
+    egsInformation("Scoring metric            : fluence in region\n") ;
+    egsInformation("Scoring region (global)   : %d \n", scoring_region) ;
+    egsInformation("Scoring region (local)    : %d of %s\n", local_scoring_region, geometry->getName().c_str());
+    egsInformation("Region Volume     : %.3G cm^3\n", region_volume) ;
+    //egsInformation("Total E fluence   : %.5G MeV/cm^2\n", total_scored);
+
+}
+
+void EnergySpectrumInVoxel::score(EB_Message message, void *data) {
+
+    //Skeptical that checking against every step is wise. Might imply that particles have to come to rest in region before taking next step.
+    
+    if (message == PARTICLE_TAKING_STEP) {
+        EGS_Particle *p= static_cast<EGS_Particle *>(data);
+        //np is the Number of particles currently on the stack, and referencing of this sort should give particle information on the particle currently being transported.
+        //int np = the_stack->np-1;
+        //int latch = the_stack->latch[np];
+        int latch = p->latch;
+        bool in_scoring_region = p->ir == scoring_region;
+        bool in_energy_scoring_range = (e_min <= p->E) && (p->E <= e_max);
+        bool correct_particle =  p->q == particle_type;
+
+        if (in_scoring_region && in_energy_scoring_range && correct_particle && latch >= 0) {
+             //As per requested by Christian, simply scoring the particle weight if it enters a region of interest.
+            EGS_Float score = p->wt;
+            //egsInformation("Energy spectrum in voxel \n") ;
+            //egsInformation("Score   : %.5G \n", score) ;
+            bins->score(getBin(p->E), score);
+            total_scored += score;
+        }
+    }
+
+}
+
+void EnergySpectrumInVoxel::getResult(int i, EGS_Float &r, EGS_Float &dr) {
+
+    double eff_history_norm = eff_history / cur_history;
+    bins->currentResult(i, r, dr);
+    //Seems to be the only location in which a consideration of energy actually takes place. i.e bin width
+    EGS_Float norm = bin_width * region_volume * eff_history_norm;
+    r /= norm;
+    dr /= norm;
+
+}
+
+void EnergySpectrumInVoxel::outputTotal() {
+
+    egsInformation("Scoring metric            : Energy spectrum in region\n") ;
+    egsInformation("Scoring region (global)   : %d \n", scoring_region) ;
+    egsInformation("Scoring region (local)    : %d of %s\n", local_scoring_region, geometry->getName().c_str());
+    egsInformation("Region Volume     : %.3G cm^3\n", region_volume) ;
+    //egsInformation("Total E fluence   : %.5G MeV/cm^2\n", total_scored);
+
+}
+
+
+
+//Iymad edits end here
